@@ -27,6 +27,16 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 running() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 
+# BSD stat spells mtime `-f %m`, GNU spells it `-c %Y`. GNU *also* accepts -f,
+# where it means "filesystem info" and still exits 0 — so `stat -f ... || stat -c ...`
+# silently keeps GNU's wrong output instead of falling through. Probe with -c,
+# which BSD rejects outright, and settle it once.
+if stat -c %Y . >/dev/null 2>&1; then
+  file_mtime() { stat -c %Y "$1" 2>/dev/null || echo 0; }
+else
+  file_mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
+fi
+
 # Is this repo's watcher registered with the service manager?
 svc_installed() {
   case "$SERVICE" in
@@ -114,7 +124,7 @@ Run: ctl.sh stop $REPO"
       rp="$DIR/state/issue-$n.runpid"
       if [ -f "$rp" ] && kill -0 "$(cat "$rp")" 2>/dev/null; then
         # Wall-clock age of the run's pid file, so a wedged turn is visible.
-        started=$(stat -f %m "$rp" 2>/dev/null || stat -c %Y "$rp" 2>/dev/null || echo 0)
+        started=$(file_mtime "$rp")
         run="  RUNNING $(( ($(date +%s) - started) / 60 ))m"
       fi
       echo "  #$n  model=$(jq -r '.model // "-"' "$f")/$(jq -r '.effort // "-"' "$f")$run"
