@@ -43,6 +43,20 @@ fi
 
 SKIP_LOGGED=""
 
+# The single most common silent failure: the label the watcher filters on does
+# not exist in the repository, so gh returns an empty list forever and the
+# watcher looks perfectly healthy. Renaming conventions between versions cause
+# exactly this. Warn rather than exit: a transient API error should not stop a
+# watcher that is otherwise fine.
+if gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' 2>/dev/null \
+   | grep -qx "$AGENT_LABEL"; then
+  :
+else
+  log "WARNING: label '$AGENT_LABEL' does not exist in $REPO (or it could not be listed)."
+  log "         Nothing routes here until an issue carries it. Create it with:"
+  log "         gh label create '$AGENT_LABEL' --repo $REPO --color 7C3AED"
+fi
+
 log "watching $REPO  label=$AGENT_LABEL  model=$DEFAULT_MODEL/$DEFAULT_EFFORT  perms=$PERMISSION_MODE"
 
 # ---------------------------------------------------------------- helpers
