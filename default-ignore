@@ -1,0 +1,12 @@
+# Junk the agent should never commit. Applied per-worktree via core.excludesFile,
+# so the user's repo .gitignore stays untouched.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+node_modules/
+.DS_Store
+*.log
+.claude/
