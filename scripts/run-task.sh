@@ -323,9 +323,15 @@ retry." >/dev/null 2>&1 || true
     die "issue #$NUM: push to $BRANCH failed"
   fi
   if ! gh pr view "$BRANCH" --repo "$REPO" >/dev/null 2>&1; then
-    TITLE="$(gh issue view "$NUM" --repo "$REPO" --json title --jq .title)"
-    gh pr create --repo "$REPO" --head "$BRANCH" --base "$DEFAULT_BRANCH" \
-      --title "issue #$NUM: $TITLE" --body "Closes #$NUM" >/dev/null
+    TITLE="$(gh issue view "$NUM" --repo "$REPO" --json title --jq .title 2>/dev/null || echo "issue #$NUM")"
+    # A PR is a convenience; the commits are already pushed. Opening one can
+    # legitimately fail — "No commits between main and <branch>" after a rebase
+    # leaves nothing to compare — and that must not abort the turn before its
+    # reply is posted.
+    if ! PR_ERR="$(gh pr create --repo "$REPO" --head "$BRANCH" --base "$DEFAULT_BRANCH" \
+         --title "issue #$NUM: $TITLE" --body "Closes #$NUM" 2>&1)"; then
+      log "issue #$NUM: could not open a PR ($(printf '%s' "$PR_ERR" | tail -c 200))"
+    fi
   fi
   # Work was pushed; say so even if the PR lookup itself fails.
   PR_LINE="
