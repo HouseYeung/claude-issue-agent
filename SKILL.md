@@ -96,7 +96,17 @@ machines can watch one repository under different codenames.
 Model labels are `<model>` or `<model>-<effort>`; no suffix means `high`.
 Models: `opus-5`, `opus-4-6`, `fable-5`, `sonnet-5`, `haiku-4-5`.
 Efforts: `low`, `medium`, `high`, `xhigh`, `max`. The `-6` in `opus-4-6` is part
-of the name, not an effort. `setup.sh` creates all 26 labels.
+of the name, not an effort. All 25 combinations are accepted.
+
+`setup.sh` creates **only** the routing label — a repository's label list is
+shared with everyone working in it, and 25 model labels is not this tool's to
+spend. Create the ones actually wanted, by name:
+
+```bash
+~/.claude/skills/claude-issue-agent/scripts/ctl.sh labels <owner/repo> sonnet-5-low opus-5
+```
+
+With no names it creates all 25. Unknown names are reported and skipped.
 
 **The model is pinned when the issue starts.** Relabeling later changes nothing;
 open a new issue to switch models.

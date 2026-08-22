@@ -105,7 +105,10 @@ cat > "$DIR/sandbox-settings.json" <<'SB'
 }
 SB
 
-# Routing label plus one label per model/effort combination you may want.
+# Only the routing label is created. Model labels are the user's choice: adding
+# 25 of them to someone's repository fills a shared namespace their whole team
+# sees, to express a preference most issues never use. `ctl.sh labels` creates
+# the ones they actually want.
 # The routing label is load-bearing: without it nothing ever reaches this
 # machine, so a failure to create it must not pass silently.
 if ! gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' \
@@ -116,14 +119,6 @@ if ! gh label list --repo "$REPO" --limit 200 --json name --jq '.[].name' \
 Your token can read the repo but not write labels. Fix that, or create the
 label by hand, then re-run setup."
 fi
-for m in fable-5 opus-5 opus-4-6 sonnet-5 haiku-4-5; do
-  gh label create "$m" --repo "$REPO" --color 1F6FEB \
-    --description "Run this issue on claude-$m (effort high)" 2>/dev/null || true
-  for e in low medium xhigh max; do
-    gh label create "$m-$e" --repo "$REPO" --color 388BFD \
-      --description "claude-$m at $e effort" 2>/dev/null || true
-  done
-done
 
 cat <<EOF
 
@@ -141,6 +136,10 @@ never touched, so another machine can watch the same repo under its own label.
 
 Add a second label to pick the model, e.g. sonnet-5-low or fable-5-max.
 No model label means the default: claude-opus-5 at high effort.
+
+Only the routing label was created. To add model labels, name the ones you want:
+  ctl.sh labels $REPO sonnet-5-low opus-5
+or pass none to create all 25 combinations.
 
 Permission mode: $PERMISSION_MODE
 Allowed users:   ${ALLOWED_USERS:-anyone who can label an issue in this repo}

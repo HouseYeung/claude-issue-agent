@@ -5,7 +5,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib.sh"
 
-CMD="${1:?usage: ctl.sh <start|stop|status|logs|install|uninstall> <owner/repo>}"
+CMD="${1:?usage: ctl.sh <start|stop|status|logs|labels|install|uninstall> <owner/repo> [args]}"
 REPO="${2:?owner/repo}"
 DIR="$(inst_dir "$REPO")"
 PIDF="$DIR/poll.pid"
@@ -122,6 +122,33 @@ Run: ctl.sh stop $REPO"
     ;;
   logs)
     tail -f "$DIR/logs/poll.log"
+    ;;
+  labels)
+    # Model labels are opt-in: setup creates only the routing label, because a
+    # repository's label list is shared with everyone working in it.
+    shift 2
+    wanted="$*"
+    if [ -z "$wanted" ]; then
+      for m in $KNOWN_MODELS; do
+        wanted="$wanted $m"
+        for e in $VALID_EFFORTS; do wanted="$wanted $m-$e"; done
+      done
+    fi
+    made=0; skipped=0
+    for l in $wanted; do
+      if ! parse_model_label "$l" >/dev/null 2>&1; then
+        echo "skipping '$l': not a known model label (models: $KNOWN_MODELS; efforts: $VALID_EFFORTS)"
+        skipped=$((skipped + 1)); continue
+      fi
+      pair="$(parse_model_label "$l")"
+      if gh label create "$l" --repo "$REPO" --color 388BFD \
+           --description "Run on ${pair%|*} at ${pair#*|} effort" 2>/dev/null; then
+        made=$((made + 1))
+      else
+        skipped=$((skipped + 1))
+      fi
+    done
+    echo "created $made label(s) in $REPO, skipped $skipped (already present or unknown)."
     ;;
   install)
     mkdir -p "$DIR/logs"

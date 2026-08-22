@@ -26,7 +26,9 @@ You (phone) read the PR, comment → next turn
 
 - **Label routing** — `claude-<codename>` decides which machine takes the work,
   so several machines can watch one repository
-- **Label picks the model** — `sonnet-5-low`, `opus-4-6-max`, one tap on a phone
+- **Label picks the model** — `sonnet-5-low`, `opus-4-6-max`, one tap on a phone.
+  Setup creates only the routing label; model labels are opt-in via
+  `ctl.sh labels`, so the repository's shared label list stays yours
 - **One issue, one session** — the session id is `md5(repo#N)`, so it survives
   lost state and reboots
 - **Interruptible** — comment while a turn runs and it is cut off within ~10s,

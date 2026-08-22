@@ -12,6 +12,7 @@ Every command takes `<owner/repo>`.
 | Stop, including strays | `ctl.sh stop` |
 | Run unattended | `ctl.sh install` |
 | Remove the service | `ctl.sh uninstall` |
+| Create model labels (opt-in) | `ctl.sh labels <repo> [name...]` |
 | Add a repository | `setup.sh` again, then `ctl.sh install` |
 | Known cap | at most 30 open routed issues are examined per poll |
 | Add a machine to the same repository | run `setup.sh` there with a **different** `AGENT_LABEL` |
