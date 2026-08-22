@@ -58,12 +58,24 @@ model_from_labels() {
 # Deterministic UUIDv4-shaped session id from a key string.
 # The same issue always maps to the same Claude session, even if state is lost.
 issue_uuid() {
-  local key="$1" h
-  if command -v md5 >/dev/null 2>&1; then
-    h=$(printf '%s' "$key" | md5 -q)
-  else
-    h=$(printf '%s' "$key" | md5sum | cut -d' ' -f1)
+  local key="$1" h=""
+  # shasum first, and deliberately: it ships with perl on both macOS and Linux
+  # and sits in /usr/bin, while md5 lives in /sbin on macOS — absent from the
+  # minimal PATH a service manager provides. Order matters beyond availability:
+  # a different hasher yields a different id, which would silently orphan an
+  # issue's conversation. A hard failure beats a malformed id that Claude only
+  # rejects several layers later.
+  if command -v shasum >/dev/null 2>&1; then
+    h=$(printf '%s' "$key" | shasum 2>/dev/null | cut -c1-32 || true)
+  elif command -v md5 >/dev/null 2>&1; then
+    h=$(printf '%s' "$key" | md5 -q 2>/dev/null || true)
+  elif command -v md5sum >/dev/null 2>&1; then
+    h=$(printf '%s' "$key" | md5sum 2>/dev/null | cut -d' ' -f1 || true)
   fi
+  case "$h" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+    *) die "cannot hash a session id for '$key' (need md5, md5sum or shasum on PATH; got: '$h')" ;;
+  esac
   printf '%s-%s-4%s-a%s-%s\n' \
     "${h:0:8}" "${h:8:4}" "${h:13:3}" "${h:17:3}" "${h:20:12}"
 }

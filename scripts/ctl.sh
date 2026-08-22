@@ -166,7 +166,7 @@ ExecStart=/bin/bash $HERE/poll.sh $REPO
 Restart=always
 RestartSec=5
 TimeoutStopSec=20
-Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 StandardOutput=append:$DIR/logs/poll.log
 StandardError=append:$DIR/logs/poll.log
 
@@ -196,7 +196,7 @@ UNIT_FILE
   <key>StandardOutPath</key><string>$DIR/logs/poll.log</string>
   <key>StandardErrorPath</key><string>$DIR/logs/poll.log</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin</string></dict>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
 </dict></plist>
 PL
     launchctl unload "$PLIST" 2>/dev/null || true
