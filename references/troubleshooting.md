@@ -111,9 +111,14 @@ failed to store: 100001
 ```
 
 It can succeed when a cached credential is still warm, which makes it
-intermittent — the worst kind of dependency. Its prompt therefore forbids
-syncing outright, and the automation does it outside the sandbox where
-credentials work normally.
+intermittent — the worst kind of dependency.
+
+**This is platform-specific.** The failure above is macOS, where git
+authenticates through the `osxkeychain` helper and that helper takes a write
+lock. On Linux, with a `store`, `cache` or `.netrc` credential source, Claude's
+fetch may well succeed. Do not rely on either outcome: the prompt forbids
+syncing on both, and the automation does it outside the sandbox, where
+credentials work whatever the platform.
 
 A rebase that hits a conflict stops the turn and says so on the issue, with the
 commands to resolve it by hand. A rejected push does the same, and says the
