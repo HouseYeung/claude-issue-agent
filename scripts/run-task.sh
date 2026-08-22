@@ -74,14 +74,40 @@ fi
 # .gitignore. Applies to fresh and pre-existing worktrees alike.
 git -C "$WT" config core.excludesFile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/default-ignore"
 
-# Pull in anything pushed to this branch by hand, so Claude builds on it — but
-# only when there is nothing here to lose. A hard reset over an interrupted
-# turn's edits, or over a commit whose push failed, destroys work with no trace.
+# Reconcile with the remote before Claude runs. Claude cannot do this itself:
+# the sandbox withholds its git credentials, so a worktree left behind the
+# remote strands it — it works against stale code, and the push at the end is
+# rejected as non-fast-forward, which used to kill this script mid-run and
+# leave the issue with no reply at all.
 if git -C "$CLONE" show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
-  if [ -n "$(git -C "$WT" status --porcelain)" ]; then
-    log "issue #$NUM: worktree is dirty, keeping it instead of resetting to origin/$BRANCH"
-  elif [ -n "$(git -C "$WT" log --oneline "origin/$BRANCH..HEAD" 2>/dev/null)" ]; then
-    log "issue #$NUM: local commits not on origin/$BRANCH, keeping them"
+  DIRTY="$(git -C "$WT" status --porcelain)"
+  AHEAD="$(git -C "$WT" log --oneline "origin/$BRANCH..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  BEHIND="$(git -C "$WT" log --oneline "HEAD..origin/$BRANCH" 2>/dev/null | wc -l | tr -d ' ')"
+
+  if [ -n "$DIRTY" ]; then
+    # Uncommitted edits are almost always an interrupted turn's work. Never
+    # destroy them; being behind is the lesser problem.
+    log "issue #$NUM: worktree is dirty, keeping it (ahead=$AHEAD behind=$BEHIND)"
+  elif [ "$AHEAD" -gt 0 ] && [ "$BEHIND" -gt 0 ]; then
+    log "issue #$NUM: diverged (ahead=$AHEAD behind=$BEHIND), rebasing onto origin/$BRANCH"
+    if ! git -C "$WT" rebase "origin/$BRANCH" >/dev/null 2>&1; then
+      git -C "$WT" rebase --abort >/dev/null 2>&1 || true
+      gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
+$AGENT_HEADER
+
+This branch has diverged from its remote and the two sides conflict, so I
+stopped before touching anything.
+
+\`$BRANCH\` has $AHEAD local commit(s) and $BEHIND remote commit(s) that a
+rebase cannot reconcile on its own. Resolve it by hand, then comment here again:
+
+\`\`\`bash
+git fetch origin && git checkout $BRANCH && git rebase origin/$BRANCH
+\`\`\`" >/dev/null 2>&1 || true
+      die "issue #$NUM: rebase conflict against origin/$BRANCH"
+    fi
+  elif [ "$AHEAD" -gt 0 ]; then
+    log "issue #$NUM: $AHEAD local commit(s) not yet on origin/$BRANCH, keeping them"
   else
     git -C "$WT" reset --hard "origin/$BRANCH"
   fi
@@ -108,9 +134,13 @@ Context (added by the automation, not written by the human):
 - Repository: $REPO
 - You are in a git worktree on branch \`$BRANCH\`.
 - Base branch: \`$DEFAULT_BRANCH\`.
-- The human may have pushed their own commits to this branch since your last
-  turn. Run \`git log --oneline $DEFAULT_BRANCH..HEAD\` and read the diff before
-  you assume the code is where you left it.
+- This worktree is already reconciled with the remote: fetched, and reset or
+  rebased onto \`origin/$BRANCH\` before you were started. Read it with
+  \`git log --oneline $DEFAULT_BRANCH..HEAD\` and the diff — the human may have
+  pushed commits since your last turn — but do NOT fetch, pull, merge or rebase
+  it yourself. You have network access, which makes it tempting; syncing is the
+  automation's job, and a merge commit you create here breaks the push it does
+  afterwards.
 - Edit files directly. Do NOT commit, push, or open a pull request, and do NOT
   comment on the issue yourself (no \`gh issue comment\`, no \`gh api\` on
   /comments).
@@ -277,7 +307,21 @@ PR_LINE="
 _No file changes this turn._"
 
 if [ "$BEFORE" != "$AFTER" ]; then
-  git -C "$WT" push -q -u origin "$BRANCH"
+  if ! PUSH_ERR="$(git -C "$WT" push -u origin "$BRANCH" 2>&1)"; then
+    gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
+$AGENT_HEADER
+
+The work is done but I could not push it — the commit is sitting in my local
+worktree on \`$BRANCH\`.
+
+\`\`\`
+$(printf '%s' "$PUSH_ERR" | tail -c 1200)
+\`\`\`
+
+Nothing is lost. Comment here again once the branch is pushable and I will
+retry." >/dev/null 2>&1 || true
+    die "issue #$NUM: push to $BRANCH failed"
+  fi
   if ! gh pr view "$BRANCH" --repo "$REPO" >/dev/null 2>&1; then
     TITLE="$(gh issue view "$NUM" --repo "$REPO" --json title --jq .title)"
     gh pr create --repo "$REPO" --head "$BRANCH" --base "$DEFAULT_BRANCH" \

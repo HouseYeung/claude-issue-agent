@@ -93,11 +93,20 @@ D=~/.claude/claude-issue-agent/<owner>__<repo>
 git -C $D/repo worktree repair $D/worktrees/*
 ```
 
-## Claude reports that its own git fetch or push failed
+## Who synchronises the branch
 
-Expected. The sandbox does not expose its network credentials. `run-task.sh`
-does all fetching and pushing outside the sandbox, so nothing is lost. Claude
-falls back to `gh api` when it wants remote state.
+`run-task.sh`, outside the sandbox, before Claude starts: it fetches, then
+either resets the worktree onto `origin/<branch>`, rebases it when the two have
+diverged, or leaves it alone when it holds uncommitted work. Committing and
+pushing happen there too, after Claude finishes.
+
+Claude does have network access inside the sandbox — `git fetch` works if it
+tries — but its prompt tells it not to, because a merge commit created mid-turn
+breaks the push that follows.
+
+A rebase that hits a conflict stops the turn and says so on the issue, with the
+commands to resolve it by hand. A rejected push does the same, and says the
+commit is safe in the local worktree.
 
 ## An interruption did not land
 
