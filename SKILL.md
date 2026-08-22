@@ -139,6 +139,14 @@ Claude never commits, pushes, opens a PR, or comments on the issue: its prompt
 forbids those specifically. Reading git is expected — the prompt tells it to run
 `git log` and read the diff before assuming where the code stands.
 
+**Git's network is the automation's, not Claude's.** Claude reaches the network
+from inside the sandbox, but git authentication is unreliable there: the
+credential helper needs to write while refreshing tokens, and the sandbox
+permits writes only inside the worktree. It works while a cached credential is
+warm and fails otherwise. Every fetch, rebase, commit and push therefore happens
+in `run-task.sh`, outside the sandbox, and Claude's prompt forbids it from
+syncing the branch itself.
+
 **The sandbox protects the machine, not the repository.** Bash writes only
 inside its worktree and cannot read `~/.ssh`, `~/.aws`, or `~/.gnupg`, but the
 network is open — and under the default `bypassPermissions` the Write tool is

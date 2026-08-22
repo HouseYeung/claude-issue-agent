@@ -100,9 +100,20 @@ either resets the worktree onto `origin/<branch>`, rebases it when the two have
 diverged, or leaves it alone when it holds uncommitted work. Committing and
 pushing happen there too, after Claude finishes.
 
-Claude does have network access inside the sandbox — `git fetch` works if it
-tries — but its prompt tells it not to, because a merge commit created mid-turn
-breaks the push that follows.
+Claude reaches the network from inside the sandbox — plain HTTPS works — but
+git's authentication does not, reliably. The credential helper wants to write
+as it refreshes and caches tokens, and the sandbox only permits writes inside
+the worktree, so a fetch fails with:
+
+```
+fatal: unable to get credential storage lock in 1000 ms: Operation not permitted
+failed to store: 100001
+```
+
+It can succeed when a cached credential is still warm, which makes it
+intermittent — the worst kind of dependency. Its prompt therefore forbids
+syncing outright, and the automation does it outside the sandbox where
+credentials work normally.
 
 A rebase that hits a conflict stops the turn and says so on the issue, with the
 commands to resolve it by hand. A rejected push does the same, and says the

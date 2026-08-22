@@ -138,9 +138,9 @@ Context (added by the automation, not written by the human):
   rebased onto \`origin/$BRANCH\` before you were started. Read it with
   \`git log --oneline $DEFAULT_BRANCH..HEAD\` and the diff — the human may have
   pushed commits since your last turn — but do NOT fetch, pull, merge or rebase
-  it yourself. You have network access, which makes it tempting; syncing is the
-  automation's job, and a merge commit you create here breaks the push it does
-  afterwards.
+  it yourself. Git authentication is unreliable in here — the credential helper
+  cannot write — and a merge commit created mid-turn breaks the push that
+  follows. Syncing is the automation's job, outside the sandbox.
 - Edit files directly. Do NOT commit, push, or open a pull request, and do NOT
   comment on the issue yourself (no \`gh issue comment\`, no \`gh api\` on
   /comments).
