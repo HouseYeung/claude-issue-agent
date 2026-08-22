@@ -296,11 +296,30 @@ Pushed to \`$BRANCH\`."
 fi
 
 # ---------------------------------------------------------------- reply
-gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
+# The reply is the only thing the human is waiting for. Losing it silently —
+# a network blip, a body GitHub rejects — leaves the issue looking abandoned
+# with the work already pushed, so say *something* even when the real reply
+# cannot be posted.
+REPLY_BODY="$AGENT_MARKER
 $AGENT_HEADER
 
 $RESULT
 $PR_LINE"
+if ! gh issue comment "$NUM" --repo "$REPO" --body "$REPLY_BODY" >/dev/null 2>&1; then
+  log "issue #$NUM: posting the reply failed, retrying once"
+  sleep 3
+  if ! gh issue comment "$NUM" --repo "$REPO" --body "$REPLY_BODY" >/dev/null 2>&1; then
+    log "issue #$NUM: reply could not be posted; falling back to a short notice"
+    gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
+$AGENT_HEADER
+
+The turn finished but its reply could not be posted (GitHub rejected it, twice).
+The work itself is safe.$PR_LINE
+
+Full text: \`$DIR/logs/issue-$NUM.log\`" >/dev/null 2>&1 \
+      || log "issue #$NUM: the fallback notice failed too"
+  fi
+fi
 
 # Real reply is in; fold the progress comments away.
 drop_progress
