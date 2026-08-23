@@ -261,6 +261,26 @@ rm -f "$INT_TOKEN"
 RESULT_LINE="$(jq -Rc 'fromjson? // empty | select(.type=="result")' "$OUT" 2>/dev/null | tail -1)"
 
 if [ $RC -ne 0 ] || [ -z "$RESULT_LINE" ]; then
+  # Hitting the usage limit is not a defect in the task, and retrying before the
+  # window resets only burns turns. Say when it comes back, and exit 75 so the
+  # failure counter leaves the issue alone.
+  if grep -qiE 'rate.?limit|usage limit|quota|429' "$OUT" "$ERRF" 2>/dev/null; then
+    RESET_AT="$(jq -Rr 'fromjson? // empty
+                        | select(.type=="rate_limit_event")
+                        | .rate_limit_info.resetsAt // empty' "$OUT" 2>/dev/null | tail -1)"
+    WHEN=""
+    [ -n "$RESET_AT" ] && WHEN=" It resets in $(fmt_eta "$RESET_AT")."
+    gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
+$AGENT_HEADER
+
+Stopped: this account hit its usage limit.$WHEN
+
+Nothing is broken and nothing was lost — comment here again once the window
+resets and I will pick up where this left off." >/dev/null 2>&1 || true
+    log "issue #$NUM: usage limit reached, not counting as a failure"
+    exit 75
+  fi
+
   gh issue comment "$NUM" --repo "$REPO" --body "$AGENT_MARKER
 $AGENT_HEADER
 
@@ -276,6 +296,42 @@ fi
 IS_ERR="$(echo "$RESULT_LINE" | jq -r '.is_error // false')"
 RESULT="$(echo "$RESULT_LINE" | jq -r '.result // ""')"
 TURNS="$(echo "$RESULT_LINE" | jq -r '.num_turns // 0')"
+
+# What the last API call of this turn had to send: the conversation so far.
+# A turn makes several calls and `usage` sums them, so the last iteration is the
+# honest figure for "how full is this session" — the number that says when to
+# start a fresh issue rather than let compaction quietly degrade the thread.
+CTX_TOKENS="$(echo "$RESULT_LINE" | jq -r '
+  ((.usage.iterations // []) | last) // .usage // {}
+  | ((.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0))
+  ' 2>/dev/null || echo 0)"
+OUT_TOKENS="$(echo "$RESULT_LINE" | jq -r '.usage.output_tokens // 0' 2>/dev/null || echo 0)"
+
+fmt_tokens() {
+  awk -v n="${1:-0}" 'BEGIN { if (n >= 1000) printf "%.1fk", n/1000; else printf "%d", n }'
+}
+
+# Seconds until an epoch, as a human duration.
+fmt_eta() {
+  awk -v target="${1:-0}" -v now="$(date +%s)" 'BEGIN {
+    s = target - now
+    if (s <= 0) { printf "now"; exit }
+    h = int(s / 3600); m = int((s % 3600) / 60)
+    if (h >= 24) printf "%dd%dh", int(h / 24), h % 24
+    else if (h > 0) printf "%dh%02dm", h, m
+    else printf "%dm", m
+  }'
+}
+
+# No context threshold here on purpose: the window size depends on the model and
+# the account (200k, 1M), the run cannot discover it, and a hardcoded guess ages
+# into a lie. The number is reported; the reader knows their own ceiling.
+USAGE_LINE=""
+if [ "${CTX_TOKENS:-0}" -gt 0 ] 2>/dev/null; then
+  USAGE_LINE="
+
+<sub>context $(fmt_tokens "$CTX_TOKENS") · $(fmt_tokens "$OUT_TOKENS") out</sub>"
+fi
 
 read_state "$REPO" "$NUM" \
   | jq --arg s "$SESSION_ID" '.started = true | .session_id = $s | .interrupted = false' \
@@ -354,7 +410,7 @@ REPLY_BODY="$AGENT_MARKER
 $AGENT_HEADER
 
 $RESULT
-$PR_LINE"
+$PR_LINE$USAGE_LINE"
 if ! gh issue comment "$NUM" --repo "$REPO" --body "$REPLY_BODY" >/dev/null 2>&1; then
   log "issue #$NUM: posting the reply failed, retrying once"
   sleep 3

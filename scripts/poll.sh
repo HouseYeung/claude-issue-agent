@@ -188,7 +188,10 @@ handle_issue() {
     else
       rc=$?
     fi
-    if [ $rc -ne 0 ]; then
+    if [ $rc -eq 75 ]; then
+      # Usage limit. The task is fine; the account is out of room for now.
+      log "issue #$num: waiting on the usage window to reset"
+    elif [ $rc -ne 0 ]; then
       log "issue #$num: run-task failed (rc=$rc) -> $DIR/logs/issue-$num.log"
       f="$(read_state "$REPO" "$num" | jq -r '.fails // 0')"
       read_state "$REPO" "$num" | jq --argjson f "$((f + 1))" '.fails = $f' \
