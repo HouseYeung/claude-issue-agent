@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Shared helpers for claude-issue-agent.
 set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/global-config.sh"
 
-AGENT_HOME="${AGENT_HOME:-$HOME/.claude/claude-issue-agent}"
+AGENT_HOME="$CLAUDE_ISSUE_AGENT_HOME"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
@@ -20,8 +22,8 @@ load_config() {
 
 # Model short names usable as labels. A label is a model label when it is one of
 # these, optionally followed by an effort suffix: sonnet-5-low, fable-5-high.
-KNOWN_MODELS="fable-5 opus-5 opus-4-6 sonnet-5 haiku-4-5"
-VALID_EFFORTS="low medium high xhigh max"
+KNOWN_MODELS="$CLAUDE_ISSUE_KNOWN_MODELS"
+VALID_EFFORTS="$CLAUDE_ISSUE_VALID_EFFORTS"
 
 # "sonnet-5-low"  -> "claude-sonnet-5|low"
 # "opus-4-6"      -> "claude-opus-4-6|high"    (the -6 belongs to the name)
@@ -52,7 +54,7 @@ model_from_labels() {
       echo "$pair"; return 0
     fi
   done
-  echo "${DEFAULT_MODEL:-claude-opus-5}|${DEFAULT_EFFORT:-high}"
+  echo "${DEFAULT_MODEL:-$CLAUDE_ISSUE_DEFAULT_MODEL}|${DEFAULT_EFFORT:-$CLAUDE_ISSUE_DEFAULT_EFFORT}"
 }
 
 # Deterministic UUIDv4-shaped session id from a key string.
@@ -84,7 +86,7 @@ issue_uuid() {
 # a mangled form of the cwd (dots and underscores become hyphens too), so glob
 # for the file instead of trying to reproduce the encoding.
 session_exists() {
-  ls "$HOME/.claude/projects"/*/"$1.jsonl" >/dev/null 2>&1
+  ls "$CLAUDE_PROJECTS_DIR"/*/"$1.jsonl" >/dev/null 2>&1
 }
 
 state_file() { echo "$(inst_dir "$1")/state/issue-$2.json"; }

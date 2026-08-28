@@ -10,7 +10,7 @@ CLONE="${2:-}"
 command -v git  >/dev/null || die "git not found."
 command -v gh   >/dev/null || die "gh not found. brew install gh"
 command -v jq   >/dev/null || die "jq not found. brew install jq"
-command -v claude >/dev/null || die "claude not found."
+command -v "$CLAUDE_ISSUE_CLI" >/dev/null || die "$CLAUDE_ISSUE_CLI not found."
 
 gh auth status >/dev/null 2>&1 \
   || die "gh is not authenticated. Run: gh auth login -h github.com
@@ -59,37 +59,44 @@ else
   [ -d "$CLONE/.git" ] || die "$CLONE is not a git repo."
 fi
 
-# The codename names the machine; the label is always claude-<codename>. Taking
-# the label directly used to be possible and silently produced a label the docs
-# never mention, so an issue tagged claude-<codename> routed nowhere.
-AGENT_CODENAME="${AGENT_CODENAME:-$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')}"
-case "$AGENT_CODENAME" in
-  ""|-*|*-) die "AGENT_CODENAME must be lowercase letters, digits and hyphens, and must not start or end with one (got: '$AGENT_CODENAME')" ;;
-  *[!a-z0-9-]*) die "AGENT_CODENAME may only contain lowercase letters, digits and hyphens (got: '$AGENT_CODENAME')" ;;
+# Two ways in. AGENT_LABEL is the label, verbatim — for an existing install
+# whose issues are already tagged something else, renaming which would strand
+# them. AGENT_CODENAME is the convenience: it gets the prefix. Whichever is
+# used, the label this machine will actually watch is printed below, which is
+# what the earlier prefix rule was really trying to guarantee.
+if [ -n "${AGENT_LABEL:-}" ]; then
+  LABEL_SOURCE="AGENT_LABEL, used as given"
+else
+  AGENT_CODENAME="${AGENT_CODENAME:-$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')}"
+  AGENT_LABEL="$CLAUDE_ISSUE_LABEL_PREFIX-$AGENT_CODENAME"
+  LABEL_SOURCE="derived from AGENT_CODENAME=$AGENT_CODENAME"
+fi
+case "$AGENT_LABEL" in
+  ""|-*|*-) die "AGENT_LABEL must not be empty or start or end with a hyphen (got: '$AGENT_LABEL')" ;;
+  *[!a-zA-Z0-9._-]*) die "AGENT_LABEL may only contain letters, digits, dots, underscores and hyphens (got: '$AGENT_LABEL')" ;;
 esac
-AGENT_LABEL="claude-$AGENT_CODENAME"
 
 DEFAULT_BRANCH="$(git -C "$CLONE" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)"
 
-cat > "$DIR/config.env" <<EOF
-# claude-issue-agent config for $REPO
-REPO="$REPO"
-OWNER_LOGIN="$OWNER_LOGIN"
-CLONE="$CLONE"
-WORKTREE_ROOT="$DIR/worktrees"
-DEFAULT_BRANCH="$DEFAULT_BRANCH"
-BRANCH_PREFIX="claude/issue-"
-POLL_INTERVAL="60"
-BUSY_INTERVAL="10"
-HEARTBEAT_INTERVAL="10"
-# Space-separated GitHub logins allowed to drive this machine. Empty means
-# anyone who can label an issue in this repo — safe only while it stays private.
-ALLOWED_USERS="${ALLOWED_USERS:-}"
-PERMISSION_MODE="$PERMISSION_MODE"
-AGENT_LABEL="$AGENT_LABEL"
-DEFAULT_MODEL="claude-opus-5"
-DEFAULT_EFFORT="high"
-EOF
+write_cfg() { printf '%s=%q\n' "$1" "$2"; }
+{
+  echo "# claude-issue-agent config for $REPO"
+  write_cfg REPO "$REPO"
+  write_cfg OWNER_LOGIN "$OWNER_LOGIN"
+  write_cfg CLONE "$CLONE"
+  write_cfg WORKTREE_ROOT "$DIR/worktrees"
+  write_cfg DEFAULT_BRANCH "$DEFAULT_BRANCH"
+  write_cfg BRANCH_PREFIX "$CLAUDE_ISSUE_BRANCH_PREFIX"
+  write_cfg POLL_INTERVAL "$CLAUDE_ISSUE_POLL_INTERVAL"
+  write_cfg BUSY_INTERVAL "$CLAUDE_ISSUE_BUSY_INTERVAL"
+  write_cfg HEARTBEAT_INTERVAL "$CLAUDE_ISSUE_HEARTBEAT_INTERVAL"
+  echo "# Space-separated GitHub logins allowed to drive this machine."
+  write_cfg ALLOWED_USERS "${ALLOWED_USERS:-}"
+  write_cfg PERMISSION_MODE "$PERMISSION_MODE"
+  write_cfg AGENT_LABEL "$AGENT_LABEL"
+  write_cfg DEFAULT_MODEL "$CLAUDE_ISSUE_DEFAULT_MODEL"
+  write_cfg DEFAULT_EFFORT "$CLAUDE_ISSUE_DEFAULT_EFFORT"
+} > "$DIR/config.env"
 
 mkdir -p "$DIR/worktrees"
 
@@ -130,12 +137,13 @@ Setup done for $REPO
   logs        $DIR/logs
 
 This machine answers to label:  $AGENT_LABEL
+                               ($LABEL_SOURCE)
 
 Put that label on an issue and this machine picks it up. Issues without it are
 never touched, so another machine can watch the same repo under its own label.
 
 Add a second label to pick the model, e.g. sonnet-5-low or fable-5-max.
-No model label means the default: claude-opus-5 at high effort.
+No model label uses the defaults from the local Skill config.
 
 Only the routing label was created. To add model labels, name the ones you want:
   ctl.sh labels $REPO sonnet-5-low opus-5

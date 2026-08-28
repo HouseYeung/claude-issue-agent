@@ -56,6 +56,30 @@ trap cleanup_run EXIT
 SANDBOX_SETTINGS="$DIR/sandbox-settings.json"
 [ -f "$SANDBOX_SETTINGS" ] || die "Missing $SANDBOX_SETTINGS. Re-run setup.sh."
 
+# Defined here, not beside their first use in the reply: the usage-limit branch
+# calls fmt_eta far earlier, and a function defined after its caller silently
+# produces nothing — the "usage limit" comment lost its reset time and the
+# turn's exit path went with it.
+fmt_tokens() {
+  awk -v n="${1:-0}" 'BEGIN { if (n >= 1000) printf "%.1fk", n/1000; else printf "%d", n }'
+}
+
+# Seconds until an epoch, as a human duration.
+fmt_eta() {
+  awk -v target="${1:-0}" -v now="$(date +%s)" 'BEGIN {
+    s = target - now
+    if (s <= 0) { printf "now"; exit }
+    h = int(s / 3600); m = int((s % 3600) / 60)
+    if (h >= 24) printf "%dd%dh", int(h / 24), h % 24
+    else if (h > 0) printf "%dh%02dm", h, m
+    else printf "%dm", m
+  }'
+}
+
+# No context threshold here on purpose: the window size depends on the model and
+# the account (200k, 1M), the run cannot discover it, and a hardcoded guess ages
+# into a lie. The number is reported; the reader knows their own ceiling.
+
 log "issue #$NUM  branch=$BRANCH  session=$SESSION_ID  started=$STARTED  model=$MODEL effort=$EFFORT"
 
 # ---------------------------------------------------------------- worktree
@@ -222,7 +246,7 @@ set +e
 # `set -m` puts the child in its own process group, so poll.sh can signal the
 # group and take Claude's own subprocesses down with it.
 set -m
-( cd "$WT" && exec claude -p "$(cat "$FULL_PROMPT")" \
+( cd "$WT" && exec "$CLAUDE_ISSUE_CLI" -p "$(cat "$FULL_PROMPT")" \
     $RESUME_ARGS \
     --output-format stream-json --verbose \
     --model "$MODEL" \
@@ -307,25 +331,6 @@ CTX_TOKENS="$(echo "$RESULT_LINE" | jq -r '
   ' 2>/dev/null || echo 0)"
 OUT_TOKENS="$(echo "$RESULT_LINE" | jq -r '.usage.output_tokens // 0' 2>/dev/null || echo 0)"
 
-fmt_tokens() {
-  awk -v n="${1:-0}" 'BEGIN { if (n >= 1000) printf "%.1fk", n/1000; else printf "%d", n }'
-}
-
-# Seconds until an epoch, as a human duration.
-fmt_eta() {
-  awk -v target="${1:-0}" -v now="$(date +%s)" 'BEGIN {
-    s = target - now
-    if (s <= 0) { printf "now"; exit }
-    h = int(s / 3600); m = int((s % 3600) / 60)
-    if (h >= 24) printf "%dd%dh", int(h / 24), h % 24
-    else if (h > 0) printf "%dh%02dm", h, m
-    else printf "%dm", m
-  }'
-}
-
-# No context threshold here on purpose: the window size depends on the model and
-# the account (200k, 1M), the run cannot discover it, and a hardcoded guess ages
-# into a lie. The number is reported; the reader knows their own ceiling.
 USAGE_LINE=""
 if [ "${CTX_TOKENS:-0}" -gt 0 ] 2>/dev/null; then
   USAGE_LINE="

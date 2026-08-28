@@ -17,11 +17,11 @@ Every command takes `<owner/repo>`.
 | Known cap | at most 30 open routed issues are examined per poll |
 | Add a machine to the same repository | run `setup.sh` there with a **different** `AGENT_LABEL` |
 
-Scripts live in `~/.claude/skills/claude-issue-agent/scripts/`.
+Scripts live in `scripts/`.
 
 ## Tuning
 
-`~/.claude/claude-issue-agent/<owner>__<repo>/config.env`:
+`$CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>/config.env`:
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -81,7 +81,7 @@ and its prompt says to read `git log` and the diff before assuming anything.
 ## Layout
 
 ```
-~/.claude/skills/claude-issue-agent/
+./
   SKILL.md
   default-ignore           Junk the agent never commits (__pycache__ and such),
                            attached per-worktree via core.excludesFile so the
@@ -96,7 +96,7 @@ and its prompt says to read `git log` and the diff before assuming anything.
     run-task.sh            One Claude turn, then commit/push/PR/reply
     ctl.sh                 start stop status logs install uninstall
 
-~/.claude/claude-issue-agent/<owner>__<repo>/
+$CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>/
   config.env               Per-repository configuration
   sandbox-settings.json    Claude's sandbox boundary
   repo/                    Local clone

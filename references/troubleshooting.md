@@ -3,7 +3,7 @@
 ## Nothing happens
 
 ```bash
-~/.claude/skills/claude-issue-agent/scripts/ctl.sh status <owner/repo>
+scripts/ctl.sh status <owner/repo>
 ```
 
 `STOPPED` → `ctl.sh start` or `ctl.sh install`. `RUNNING` → read `ctl.sh logs`;
@@ -34,7 +34,7 @@ Deliberate, so a hard error cannot flood the log. Clear the counter after
 fixing the cause:
 
 ```bash
-D=~/.claude/claude-issue-agent/<owner>__<repo>
+D=$CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>
 jq '.fails = 0' $D/state/issue-<N>.json > /tmp/s.json && mv /tmp/s.json $D/state/issue-<N>.json
 ```
 
@@ -46,7 +46,7 @@ the issue number, so the next run resumes the same session. See "Starting an
 issue over from scratch" for a real reset.
 
 ```bash
-rm ~/.claude/claude-issue-agent/<owner>__<repo>/state/issue-<N>.json
+rm $CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>/state/issue-<N>.json
 ```
 
 ## `Session ID ... is already in use`
@@ -74,14 +74,14 @@ the worktree, and both branches. Missing any one of them leaves the old
 conversation or the old code in play.
 
 ```bash
-D=~/.claude/claude-issue-agent/<owner>__<repo>
+D=$CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>
 N=<issue-number>
-~/.claude/skills/claude-issue-agent/scripts/ctl.sh stop <owner/repo>
+scripts/ctl.sh stop <owner/repo>
 git -C $D/repo worktree remove --force $D/worktrees/issue-$N
 git -C $D/repo branch -D claude/issue-$N
 git -C $D/repo push origin --delete claude/issue-$N
 rm -f $D/state/issue-$N.json
-rm -f ~/.claude/projects/*/"$(bash -c '. ~/.claude/skills/claude-issue-agent/scripts/lib.sh; issue_uuid "<owner/repo>#'$N'"')".jsonl
+rm -f $CLAUDE_PROJECTS_DIR/*/"$(bash -c '. scripts/lib.sh; issue_uuid "<owner/repo>#'$N'"')".jsonl
 ```
 
 ## Git errors after moving the data directory
@@ -89,7 +89,7 @@ rm -f ~/.claude/projects/*/"$(bash -c '. ~/.claude/skills/claude-issue-agent/scr
 Worktrees record absolute paths:
 
 ```bash
-D=~/.claude/claude-issue-agent/<owner>__<repo>
+D=$CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>
 git -C $D/repo worktree repair $D/worktrees/*
 ```
 
@@ -133,5 +133,5 @@ running old code — `ctl.sh stop` then `start`.
 ## Per-issue detail
 
 ```bash
-tail -f ~/.claude/claude-issue-agent/<owner>__<repo>/logs/issue-<N>.log
+tail -f $CLAUDE_ISSUE_AGENT_HOME/<owner>__<repo>/logs/issue-<N>.log
 ```

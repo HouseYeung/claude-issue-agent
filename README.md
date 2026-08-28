@@ -41,20 +41,17 @@ You (phone) read the PR, comment → next turn
 
 ## Install
 
-```bash
-git clone https://github.com/HouseYeung/claude-issue-agent.git \
-  ~/.claude/skills/claude-issue-agent
-```
+Add the public Skill repository in CC Switch, install `claude-issue-agent`, and enable it for the required clients. The installed copy is the runtime source; do not link a development checkout directly.
 
-Then ask Claude Code to set it up. It asks three questions — machine codename,
+Then ask an agent to set it up. It asks three questions — machine codename,
 permission mode, repository — and configures everything.
 
 Manual setup:
 
 ```bash
 AGENT_CODENAME=ukk PERMISSION_MODE=bypassPermissions \
-  ~/.claude/skills/claude-issue-agent/scripts/setup.sh <owner/repo>
-~/.claude/skills/claude-issue-agent/scripts/ctl.sh install <owner/repo>
+  scripts/setup.sh <owner/repo>
+scripts/ctl.sh install <owner/repo>
 ```
 
 See [SKILL.md](SKILL.md) for the full contract,
