@@ -2,6 +2,11 @@
 # Run one Claude turn for one issue, then push the code and reply on GitHub.
 # Usage: run-task.sh <owner/repo> <issue-number> <prompt-file>
 set -euo pipefail
+# Answered first: --help must not read configuration or reach GitHub.
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  printf '%s\n' "usage: run-task.sh <owner/repo> <issue-number> <prompt-file>"
+  exit 0
+fi
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 REPO="${1:?repo}"; NUM="${2:?issue number}"; PROMPT_FILE="${3:?prompt file}"
@@ -53,13 +58,7 @@ cleanup_run() {
 }
 trap cleanup_run EXIT
 
-SANDBOX_SETTINGS="$DIR/sandbox-settings.json"
-[ -f "$SANDBOX_SETTINGS" ] || die "Missing $SANDBOX_SETTINGS. Re-run setup.sh."
-
-# Defined here, not beside their first use in the reply: the usage-limit branch
-# calls fmt_eta far earlier, and a function defined after its caller silently
-# produces nothing — the "usage limit" comment lost its reset time and the
-# turn's exit path went with it.
+# Defined before first use: the usage-limit branch below calls fmt_eta.
 fmt_tokens() {
   awk -v n="${1:-0}" 'BEGIN { if (n >= 1000) printf "%.1fk", n/1000; else printf "%d", n }'
 }
@@ -76,9 +75,8 @@ fmt_eta() {
   }'
 }
 
-# No context threshold here on purpose: the window size depends on the model and
-# the account (200k, 1M), the run cannot discover it, and a hardcoded guess ages
-# into a lie. The number is reported; the reader knows their own ceiling.
+SANDBOX_SETTINGS="$DIR/sandbox-settings.json"
+[ -f "$SANDBOX_SETTINGS" ] || die "Missing $SANDBOX_SETTINGS. Re-run setup.sh."
 
 log "issue #$NUM  branch=$BRANCH  session=$SESSION_ID  started=$STARTED  model=$MODEL effort=$EFFORT"
 
@@ -181,7 +179,7 @@ EOF
 
 # ---------------------------------------------------------------- claude
 OUT="$(mktemp)"
-ERRF="$OUT.err"
+ERRF="$(mktemp)"
 MODEL_LABEL="${MODEL#claude-}-$EFFORT"
 rm -f "$PIDS_FILE"
 
@@ -246,13 +244,13 @@ set +e
 # `set -m` puts the child in its own process group, so poll.sh can signal the
 # group and take Claude's own subprocesses down with it.
 set -m
-( cd "$WT" && exec "$CLAUDE_ISSUE_CLI" -p "$(cat "$FULL_PROMPT")" \
+( cd "$WT" && exec "$CLAUDE_ISSUE_CLI" -p \
     $RESUME_ARGS \
     --output-format stream-json --verbose \
     --model "$MODEL" \
     --effort "$EFFORT" \
     --settings "$SANDBOX_SETTINGS" \
-    --permission-mode "$PERMISSION_MODE" < /dev/null ) > "$OUT" 2>"$ERRF" &
+    --permission-mode "$PERMISSION_MODE" < "$FULL_PROMPT" ) > "$OUT" 2>"$ERRF" &
 CLAUDE_PID=$!
 set +m
 echo "$CLAUDE_PID" > "$CPIDFILE"
@@ -331,6 +329,9 @@ CTX_TOKENS="$(echo "$RESULT_LINE" | jq -r '
   ' 2>/dev/null || echo 0)"
 OUT_TOKENS="$(echo "$RESULT_LINE" | jq -r '.usage.output_tokens // 0' 2>/dev/null || echo 0)"
 
+# No context threshold here on purpose: the window size depends on the model and
+# the account (200k, 1M), the run cannot discover it, and a hardcoded guess ages
+# into a lie. The number is reported; the reader knows their own ceiling.
 USAGE_LINE=""
 if [ "${CTX_TOKENS:-0}" -gt 0 ] 2>/dev/null; then
   USAGE_LINE="

@@ -2,6 +2,11 @@
 # Start / stop / inspect the watcher for one repository.
 # Usage: ctl.sh <start|stop|status|logs|install|uninstall> <owner/repo>
 set -euo pipefail
+# Answered first: --help must not read configuration or reach GitHub.
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  printf '%s\n' "usage: ctl.sh <start|stop|status|logs|labels|install|uninstall> <owner/repo> [args]"
+  exit 0
+fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib.sh"
 
@@ -24,6 +29,11 @@ esac
 # systemctl --user needs the bus; a non-login shell (cron, wsl.exe -e) has no
 # XDG_RUNTIME_DIR and would otherwise fail with "Failed to connect to bus".
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+# pgrep/pkill -f match an extended regular expression against the whole command
+# line. An unescaped repo name lets a metacharacter widen the match, and without
+# an end anchor any command that merely mentions the watcher would be killed.
+WATCHER_RE="poll\.sh $(printf '%s' "$REPO" | sed 's/[][^$.*+?(){}|\\]/\\&/g')\$"
 
 running() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 
@@ -60,8 +70,8 @@ case "$CMD" in
     running && die "Already running (pid $(cat "$PIDF"))."
     # A stray watcher from an earlier run would race this one for the same
     # issues, so refuse to start while any is alive.
-    if pgrep -f "poll.sh $REPO" >/dev/null 2>&1; then
-      die "A watcher for $REPO is still alive: $(pgrep -f "poll.sh $REPO" | tr '\n' ' ')
+    if pgrep -f "$WATCHER_RE" >/dev/null 2>&1; then
+      die "A watcher for $REPO is still alive: $(pgrep -f "$WATCHER_RE" | tr '\n' ' ')
 Run: ctl.sh stop $REPO"
     fi
     mkdir -p "$DIR/logs"
@@ -86,12 +96,12 @@ Run: ctl.sh stop $REPO"
     if running; then kill "$(cat "$PIDF")" 2>/dev/null && echo "Stopped pid $(cat "$PIDF")."; fi
     # Catch watchers this pid file lost track of.
     sleep 1
-    if pgrep -f "poll.sh $REPO" >/dev/null 2>&1; then
-      echo "Killing strays: $(pgrep -f "poll.sh $REPO" | tr '\n' ' ')"
-      pkill -f "poll.sh $REPO" || true
+    if pgrep -f "$WATCHER_RE" >/dev/null 2>&1; then
+      echo "Killing strays: $(pgrep -f "$WATCHER_RE" | tr '\n' ' ')"
+      pkill -f "$WATCHER_RE" || true
       sleep 1
     fi
-    pkill -9 -f "poll.sh $REPO" 2>/dev/null || true
+    pkill -9 -f "$WATCHER_RE" 2>/dev/null || true
     rm -f "$PIDF" "$DIR"/state/issue-*.runpid "$DIR"/state/issue-*.claudepid
     rm -rf "$DIR/poll.lock"
     echo "All watchers for $REPO stopped."

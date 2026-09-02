@@ -2,6 +2,12 @@
 # One-time setup for one repository.
 # Usage: setup.sh <owner/repo> [/path/to/local/clone]
 set -euo pipefail
+# Answered first: --help must not read configuration or reach GitHub.
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  echo "usage: setup.sh <owner/repo> [local-clone-path]"
+  echo "env:   AGENT_CODENAME, PERMISSION_MODE, ALLOWED_USERS, ALLOW_PUBLIC_REPO"
+  exit 0
+fi
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 REPO="${1:?usage: setup.sh <owner/repo> [local-clone-path]}"
@@ -59,26 +65,24 @@ else
   [ -d "$CLONE/.git" ] || die "$CLONE is not a git repo."
 fi
 
-# Two ways in. AGENT_LABEL is the label, verbatim — for an existing install
-# whose issues are already tagged something else, renaming which would strand
-# them. AGENT_CODENAME is the convenience: it gets the prefix. Whichever is
-# used, the label this machine will actually watch is printed below, which is
-# what the earlier prefix rule was really trying to guarantee.
-if [ -n "${AGENT_LABEL:-}" ]; then
-  LABEL_SOURCE="AGENT_LABEL, used as given"
-else
-  AGENT_CODENAME="${AGENT_CODENAME:-$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')}"
-  AGENT_LABEL="$CLAUDE_ISSUE_LABEL_PREFIX-$AGENT_CODENAME"
-  LABEL_SOURCE="derived from AGENT_CODENAME=$AGENT_CODENAME"
-fi
-case "$AGENT_LABEL" in
-  ""|-*|*-) die "AGENT_LABEL must not be empty or start or end with a hyphen (got: '$AGENT_LABEL')" ;;
-  *[!a-zA-Z0-9._-]*) die "AGENT_LABEL may only contain letters, digits, dots, underscores and hyphens (got: '$AGENT_LABEL')" ;;
+# The codename names the machine; the label is always claude-<codename>. Taking
+# the label directly used to be possible and silently produced a label the docs
+# never mention, so an issue tagged claude-<codename> routed nowhere.
+AGENT_CODENAME="${AGENT_CODENAME:-$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')}"
+case "$AGENT_CODENAME" in
+  ""|-*|*-) die "AGENT_CODENAME must be lowercase letters, digits and hyphens, and must not start or end with one (got: '$AGENT_CODENAME')" ;;
+  *[!a-z0-9-]*) die "AGENT_CODENAME may only contain lowercase letters, digits and hyphens (got: '$AGENT_CODENAME')" ;;
 esac
+AGENT_LABEL="$CLAUDE_ISSUE_LABEL_PREFIX-$AGENT_CODENAME"
 
 DEFAULT_BRANCH="$(git -C "$CLONE" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)"
 
-write_cfg() { printf '%s=%q\n' "$1" "$2"; }
+# Plain KEY="value" so lib.sh can parse it without a shell. A value carrying a
+# quote or a newline would break that contract, so refuse it here instead.
+write_cfg() {
+  case "$2" in *'"'*|*"'"*) die "$1 must not contain a quote character: $2" ;; esac
+  printf '%s="%s"\n' "$1" "$2"
+}
 {
   echo "# claude-issue-agent config for $REPO"
   write_cfg REPO "$REPO"
@@ -137,7 +141,6 @@ Setup done for $REPO
   logs        $DIR/logs
 
 This machine answers to label:  $AGENT_LABEL
-                               ($LABEL_SOURCE)
 
 Put that label on an issue and this machine picks it up. Issues without it are
 never touched, so another machine can watch the same repo under its own label.

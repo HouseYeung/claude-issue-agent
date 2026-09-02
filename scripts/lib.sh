@@ -12,12 +12,25 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 slug() { echo "${1/\//__}"; }
 inst_dir() { echo "$AGENT_HOME/$(slug "$1")"; }
 
+# Keys setup.sh writes into an instance config.env. Anything else is a mistake
+# or tampering, and is refused rather than ignored.
+INSTANCE_KEYS='REPO OWNER_LOGIN CLONE WORKTREE_ROOT DEFAULT_BRANCH BRANCH_PREFIX POLL_INTERVAL BUSY_INTERVAL HEARTBEAT_INTERVAL ALLOWED_USERS PERMISSION_MODE AGENT_LABEL DEFAULT_MODEL DEFAULT_EFFORT'
+
+# Parsed, never sourced. The file sits in a state directory this machine writes,
+# and sourcing it would turn any write there into arbitrary code in the watcher.
 load_config() {
-  local repo="$1"
-  local cfg="$(inst_dir "$repo")/config.env"
+  local repo="$1" cfg line key value
+  cfg="$(inst_dir "$repo")/config.env"
   [ -f "$cfg" ] || die "No config for $repo. Run setup.sh first."
-  # shellcheck disable=SC1090
-  . "$cfg"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    case "$line" in *=*) ;; *) die "malformed line in $cfg: $line" ;; esac
+    key=${line%%=*}; value=${line#*=}
+    case " $INSTANCE_KEYS " in *" $key "*) ;; *) die "unsupported key in $cfg: $key" ;; esac
+    value=${value%$'\r'}
+    case "$value" in '"'*'"'|"'"*"'") value=${value:1:${#value}-2} ;; esac
+    printf -v "$key" '%s' "$value"
+  done < "$cfg"
 }
 
 # Model short names usable as labels. A label is a model label when it is one of
@@ -30,6 +43,9 @@ VALID_EFFORTS="$CLAUDE_ISSUE_VALID_EFFORTS"
 # Returns 1 when the string is not a model label at all.
 parse_model_label() {
   local spec="$1" base effort="${DEFAULT_EFFORT:-high}" e m
+  # A version written with a dot is the same label: fable-5.1 and fable-5-1
+  # name one model, and a reader will type whichever the release notes used.
+  spec="${spec//./-}"
   base="$spec"
   for e in $VALID_EFFORTS; do
     case "$spec" in
@@ -87,6 +103,23 @@ issue_uuid() {
 # for the file instead of trying to reproduce the encoding.
 session_exists() {
   ls "$CLAUDE_PROJECTS_DIR"/*/"$1.jsonl" >/dev/null 2>&1
+}
+
+# A label that carries an effort suffix but names no model this build knows.
+# Falling back to the default silently is the worst outcome: the run looks
+# normal while answering on a model nobody asked for. Naming it lets the reader
+# fix the label, or add the model to CLAUDE_ISSUE_KNOWN_MODELS.
+unknown_model_labels() {
+  local labels="$1" l e hit found=""
+  for l in $labels; do
+    parse_model_label "$l" >/dev/null 2>&1 && continue
+    hit=""
+    for e in $VALID_EFFORTS; do
+      case "${l//./-}" in *-"$e") hit=1; break ;; esac
+    done
+    [ -n "$hit" ] && found="$found $l"
+  done
+  printf '%s' "${found# }"
 }
 
 state_file() { echo "$(inst_dir "$1")/state/issue-$2.json"; }

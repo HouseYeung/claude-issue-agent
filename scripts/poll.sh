@@ -4,6 +4,11 @@
 # comment arrives. Runs forever; stop it with ctl.sh stop.
 # Usage: poll.sh <owner/repo>
 set -euo pipefail
+# Answered first: --help must not read configuration or reach GitHub.
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  printf '%s\n' "usage: poll.sh <owner/repo>"
+  exit 0
+fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib.sh"
 
@@ -66,10 +71,15 @@ log "watching $REPO  label=$AGENT_LABEL  model=$DEFAULT_MODEL/$DEFAULT_EFFORT  p
 # jq matters: --paginate runs the --jq filter once per page, so a repo with more
 # than one page of comments would print one id per page and every numeric test
 # downstream would break.
+# Fails rather than answering 0. A transient API error used to read as "no
+# comments", the watermark was then written as 0, and the next pass replayed the
+# entire comment history as a fresh prompt.
 newest_comment_id() {
-  gh api "repos/$REPO/issues/$1/comments" --paginate --jq '.[]' 2>/dev/null \
-    | jq -s --arg allow "${ALLOWED_USERS:-}" "[.[] | $(jq_ignore)] | (.[-1].id) // 0" \
-    2>/dev/null || echo 0
+  local raw
+  raw="$(gh api "repos/$REPO/issues/$1/comments" --paginate --jq '.[]' 2>/dev/null)" || return 1
+  printf '%s' "$raw" \
+    | jq -s --arg allow "${ALLOWED_USERS:-}" "[.[] | $(jq_ignore)] | (.[-1].id) // 0" 2>/dev/null \
+    || return 1
 }
 
 running_pid() {
@@ -133,7 +143,11 @@ handle_issue() {
   state="$(read_state "$REPO" "$num")"
   started="$(echo "$state" | jq -r '.started // false')"
   last_id="$(echo "$state" | jq -r '.last_comment_id // 0')"
-  newest="$(newest_comment_id "$num")"
+  if ! newest="$(newest_comment_id "$num")"; then
+    log "issue #$num: comments unreadable this pass, leaving the watermark alone"
+    return 0
+  fi
+  case "$newest" in ''|*[!0-9]*) log "issue #$num: unusable comment watermark, skipping this pass"; return 0 ;; esac
 
   # A turn is in flight. A newer comment than the one it started from means the
   # human is talking over it, so cut it off now and let the next pass restart.
@@ -154,10 +168,13 @@ handle_issue() {
     # Comments made before the first pickup are part of the request. Dropping
     # them, then advancing the watermark past them, lost them permanently.
     local pre
-    pre="$(gh api "repos/$REPO/issues/$num/comments" --paginate --jq '.[]' 2>/dev/null \
+    if ! pre="$(gh api "repos/$REPO/issues/$num/comments" --paginate --jq '.[]' 2>/dev/null \
            | jq -rs --arg allow "${ALLOWED_USERS:-}" \
              "[.[] | $(jq_ignore) | \"@\(\$c.login):\n\(\$c.body)\"] | join(\"\n\n---\n\n\")" \
-           2>/dev/null || true)"
+           2>/dev/null)"; then
+      log "issue #$num: earlier comments unreadable, deferring the first turn"
+      rm -f "$prompt"; return 0
+    fi
     { echo "# $title"; echo; echo "$body"
       [ -n "$pre" ] && { echo; echo "---"; echo; echo "$pre"; }
     } > "$prompt"
